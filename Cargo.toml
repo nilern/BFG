@@ -5,4 +5,3 @@ authors = ["Pauli Jaakkola <pauli.jaakkola@iki.fi>"]
 
 [dependencies]
 rustyline = "1.0.0"
-regex = "0.2"
