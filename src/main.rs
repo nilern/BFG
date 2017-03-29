@@ -5,15 +5,25 @@ use std::io::Read;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
-mod bytecode;
 mod parse;
-mod vm;
+mod bytecode;
+mod optcode;
 
 use parse::parse;
 
 fn naive(code: &str) {
     match parse(code) {
-        Ok(code) => { let _ = vm::run(&code, &mut vec![0; 30_000]); },
+        Ok(code) => { let _ = bytecode::run(&code, &mut vec![0; 30_000]); },
+        Err(err) => println!("Error: {:?}", err)
+    }
+}
+
+fn opt(code: &str) {
+    match parse(code) {
+        Ok(code) => {
+            let optcode = optcode::convert(code);
+            let _ = optcode::run(&optcode, &mut vec![0; 30_000]);
+        },
         Err(err) => println!("Error: {:?}", err)
     }
 }
@@ -28,7 +38,8 @@ fn main() {
                 match readline {
                     Ok(line) => {
                         rl.add_history_entry(&line);
-                        naive(&line);
+                        //naive(&line);
+                        opt(&line);
                     },
                     Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => break,
                     Err(err) => {
@@ -43,7 +54,8 @@ fn main() {
             let mut f = File::open(args.next().unwrap()).expect("unable to open file");
             let mut code = String::new();
             f.read_to_string(&mut code).expect("error reading from file");
-            naive(&code);
+            //naive(&code);
+            opt(&code);
         }
         _ => println!("Too many command line arguments.")
     }
