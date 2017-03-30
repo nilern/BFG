@@ -37,8 +37,8 @@ pub fn run(code: &[Optcode], data: &mut [u8]) -> io::Result<()> {
         match instr {
             Inc => dp += 1,
             Dec => dp -= 1,
-            Add(n) => dp += (dp as isize + n as isize) as usize,
-            Sub(n) => dp -= (dp as isize - n as isize) as usize,
+            Add(n) => dp = (dp as isize + n as isize) as usize,
+            Sub(n) => dp = (dp as isize - n as isize) as usize,
 
             SInc(offset) => {
                 let i = (dp as isize + offset as isize) as usize;
@@ -182,5 +182,24 @@ fn commit_write(res: &mut Vec<Optcode>, dp_offset: i16, value_offset: i8) {
             res.push(SSub(-value_offset as u8, dp_offset));
         },
         Ordering::Equal => ()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test::Bencher;
+    use std::fs::File;
+    use std::io::Read;
+    use parse::parse;
+
+    #[bench]
+    fn bench_optcode(b: &mut Bencher) {
+        let mut f = File::open("bf/hello.b").expect("unable to open file");
+        let mut src = String::new();
+        f.read_to_string(&mut src).expect("error reading from file");
+        let bc = parse(&src).unwrap();
+        let oc = convert(bc);
+        b.iter(|| run(&oc, &mut vec![0; 30_000]));
     }
 }

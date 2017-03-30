@@ -1,4 +1,7 @@
+#![feature(test)]
+
 extern crate rustyline;
+extern crate test;
 
 use std::fs::File;
 use std::io::Read;
@@ -11,18 +14,22 @@ mod optcode;
 
 use parse::parse;
 
-fn naive(code: &str) {
+fn eval(code: &str, opt_level: usize) {
     match parse(code) {
-        Ok(code) => { let _ = bytecode::run(&code, &mut vec![0; 30_000]); },
-        Err(err) => println!("Error: {:?}", err)
-    }
-}
-
-fn opt(code: &str) {
-    match parse(code) {
-        Ok(code) => {
-            let optcode = optcode::convert(code);
-            let _ = optcode::run(&optcode, &mut vec![0; 30_000]);
+        Ok(code) => match opt_level {
+            0 => {
+                let mut mem = vec![0; 30_000];
+                let _ = bytecode::run(&code, &mut mem);
+            },
+            1 => {
+                let optcode = optcode::convert(code);
+                // for instr in optcode.iter() {
+                //     println!("{:?}", instr);
+                // }
+                let mut mem = vec![0; 30_000];
+                let _ = optcode::run(&optcode, &mut mem);
+            },
+            _ => println!("Error: unsupported opt_level {}", opt_level)
         },
         Err(err) => println!("Error: {:?}", err)
     }
@@ -38,8 +45,7 @@ fn main() {
                 match readline {
                     Ok(line) => {
                         rl.add_history_entry(&line);
-                        //naive(&line);
-                        opt(&line);
+                        eval(&line, 0);
                     },
                     Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => break,
                     Err(err) => {
@@ -54,8 +60,7 @@ fn main() {
             let mut f = File::open(args.next().unwrap()).expect("unable to open file");
             let mut code = String::new();
             f.read_to_string(&mut code).expect("error reading from file");
-            //naive(&code);
-            opt(&code);
+            eval(&code, 0);
         }
         _ => println!("Too many command line arguments.")
     }

@@ -42,3 +42,21 @@ pub fn run(code: &[Bytecode], data: &mut [u8]) -> io::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test::Bencher;
+    use std::fs::File;
+    use std::io::Read;
+    use parse::parse;
+
+    #[bench]
+    fn bench_bytecode(b: &mut Bencher) {
+        let mut f = File::open("bf/hello.b").expect("unable to open file");
+        let mut src = String::new();
+        f.read_to_string(&mut src).expect("error reading from file");
+        let code = parse(&src).unwrap();
+        b.iter(|| run(&code, &mut vec![0; 30_000]));
+    }
+}
