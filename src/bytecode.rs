@@ -140,29 +140,43 @@ pub fn run(code: &[i32], data: &mut [u8]) -> io::Result<()> {
     let mut ip = 0usize;
     let mut dp = 0usize;
 
-    while ip < code.len() {
-        let instr = code[ip];
-        ip += 1;
-        match unsafe { mem::transmute((instr & 0xff) as u8) } {
-            PAdd => dp = (dp as isize + (instr >> ISHIFT) as isize) as usize,
-            DAdd => {
-                let i = dp as isize + (instr >> ISHIFT) as isize;
-                let n = instr as i16 >> NSHIFT;
-                let dest = &mut data[i as usize];
-                *dest = (*dest as i8).wrapping_add(n as i8) as u8;
-            },
+    if ip < code.len() {
+        let mut instr = code[ip];
+        let mut opcode: Opcode = unsafe { mem::transmute((instr & 0xff) as u8) };
+        let mut offset = instr >> ISHIFT;
 
-            Jz => if data[dp] == 0 { ip = instr as usize >> ISHIFT; },
-            Jnz => if data[dp] != 0 { ip = instr as usize >> ISHIFT; },
+        loop {
+            ip += 1;
 
-            Putc => {
-                let i = (dp as isize + (instr >> ISHIFT) as isize) as usize;
-                let _ = io::stdout().write(&data[i..i + 1])?;
-            },
-            Getc => {
-                let i = (dp as isize + (instr >> ISHIFT) as isize) as usize;
-                let _ = io::stdin().read(&mut data[i..i + 1])?;
+            match opcode {
+                PAdd => dp = (dp as isize + offset as isize) as usize,
+                DAdd => {
+                    let i = dp as isize + offset as isize;
+                    let n = instr as i16 >> NSHIFT;
+                    let dest = &mut data[i as usize];
+                    *dest = (*dest as i8).wrapping_add(n as i8) as u8;
+                },
+
+                Jz => if data[dp] == 0 { ip = offset as usize & 0xffff; },
+                Jnz => if data[dp] != 0 { ip = offset as usize & 0xffff; },
+
+                Putc => {
+                    let i = (dp as isize + offset as isize) as usize;
+                    let _ = io::stdout().write(&data[i..i + 1])?;
+                },
+                Getc => {
+                    let i = (dp as isize + offset as isize) as usize;
+                    let _ = io::stdin().read(&mut data[i..i + 1])?;
+                }
             }
+
+            if ip >= code.len() {
+                break;
+            }
+
+            instr = code[ip];
+            opcode = unsafe { mem::transmute((instr & 0xff) as u8) };
+            offset = instr >> ISHIFT;
         }
     }
 
