@@ -15,10 +15,10 @@ pub fn parse(code: &str) -> Result<Vec<Bytecode>, ParseError> {
     for (i, c) in code.chars().enumerate() {
         index = i;
         match c {
-            '>' => res.push(Inc),
-            '<' => res.push(Dec),
-            '+' => res.push(SInc),
-            '-' => res.push(SDec),
+            '>' => res.push(PAdd(1)),
+            '<' => res.push(PAdd(-1)),
+            '+' => res.push(DAdd(1, 0)),
+            '-' => res.push(DAdd(-1, 0)),
             '[' => {
                 res.push(Jz(0));
                 labels.push((Jz(0), res.len() as u16));
@@ -29,8 +29,8 @@ pub fn parse(code: &str) -> Result<Vec<Bytecode>, ParseError> {
             } else {
                 return Err(ParseError { index: index });
             },
-            '.' => res.push(Putc),
-            ',' => res.push(Getc),
+            '.' => res.push(Putc(0)),
+            ',' => res.push(Getc(0)),
             _ => ()
         }
     }
