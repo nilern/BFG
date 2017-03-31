@@ -15,15 +15,17 @@ use parse::parse;
 
 static mut DATA: [u8; 30_000] = [0; 30_000];
 
-unsafe fn eval(code: &str, opt_level: usize) {
-    match parse(code) {
-        Ok(code) => match opt_level {
+unsafe fn eval(src: &str, opt_level: usize) {
+    match parse(src) {
+        Ok(ir) => match opt_level {
             0 => {
+                let code = bytecode::assemble(ir.iter());
                 let _ = bytecode::run(&code, &mut DATA);
             },
             1 => {
-                let optcode = bytecode::optimize(code);
-                let _ = bytecode::run(&optcode, &mut DATA);
+                let opt_ir = bytecode::optimize(ir);
+                let code = bytecode::assemble(opt_ir.iter());
+                let _ = bytecode::run(&code, &mut DATA);
             },
             _ => println!("Error: unsupported opt_level {}", opt_level)
         },
@@ -54,9 +56,9 @@ fn main() {
         2 => {
             let _ = args.next();
             let mut f = File::open(args.next().unwrap()).expect("unable to open file");
-            let mut code = String::new();
-            f.read_to_string(&mut code).expect("error reading from file");
-            unsafe { eval(&code, 1) };
+            let mut src = String::new();
+            f.read_to_string(&mut src).expect("error reading from file");
+            unsafe { eval(&src, 1) };
         }
         _ => println!("Too many command line arguments.")
     }

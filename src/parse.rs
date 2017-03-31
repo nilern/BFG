@@ -1,12 +1,12 @@
-use bytecode::Bytecode;
+use bytecode::Stmt;
 
 #[derive(Debug)]
 pub struct ParseError {
     index: usize
 }
 
-pub fn parse(code: &str) -> Result<Vec<Bytecode>, ParseError> {
-    use bytecode::Bytecode::*;
+pub fn parse(code: &str) -> Result<Vec<Stmt>, ParseError> {
+    use bytecode::Stmt::*;
 
     let mut res = Vec::new();
     let mut labels = Vec::new();
