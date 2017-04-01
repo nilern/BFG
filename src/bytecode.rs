@@ -1,13 +1,16 @@
 use std::io;
 use std::io::{Read, Write};
 use std::mem;
+use dynasmrt::{DynasmApi, DynasmLabelApi, ExecutableBuffer};
+use dynasmrt::x64;
+use libc;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Stmt {
     PAdd(i16),
     DAdd(i8, i16),
-    Jz(u16),
-    Jnz(u16),
+    Jz(i16),
+    Jnz(i16),
     Putc(i16),
     Getc(i16)
 }
@@ -62,7 +65,7 @@ pub fn optimize(code: Vec<Stmt>) -> Vec<Stmt> {
                 dp_offset = 0;
 
                 res.push(Jz(0));
-                labels.push(res.len() as u16);
+                labels.push(res.len() as i16);
                 instrs.next();
             },
             Some(&Jnz(_)) => {
@@ -70,8 +73,9 @@ pub fn optimize(code: Vec<Stmt>) -> Vec<Stmt> {
                 dp_offset = 0;
 
                 let target = labels.pop().unwrap();
-                res.push(Jnz(target));
-                res[target as usize - 1] = Jz(res.len() as u16);
+                let diff = res.len() as i16 - target + 1;
+                res.push(Jnz(-diff));
+                res[target as usize - 1] = Jz(diff);
                 instrs.next();
             },
             Some(&Putc(0)) => {
@@ -157,8 +161,8 @@ pub fn run(code: &[i32], data: &mut [u8]) -> io::Result<()> {
                     *dest = (*dest as i8).wrapping_add(n as i8) as u8;
                 },
 
-                Jz => if data[dp] == 0 { ip = offset as usize & 0xffff; },
-                Jnz => if data[dp] != 0 { ip = offset as usize & 0xffff; },
+                Jz => if data[dp] == 0 { ip = (ip as isize + offset as isize) as usize; },
+                Jnz => if data[dp] != 0 { ip = (ip as isize + offset as isize) as usize; },
 
                 Putc => {
                     let i = (dp as isize + offset as isize) as usize;
@@ -181,6 +185,137 @@ pub fn run(code: &[i32], data: &mut [u8]) -> io::Result<()> {
     }
 
     Ok(())
+}
+
+pub fn vm() -> (ExecutableBuffer, extern fn(*const i32, usize, *mut u8)) {
+    let mut ops = x64::Assembler::new();
+    let jump_table = ops.new_dynamic_label();
+
+    dynasm!(ops
+        ; .alias ip, rbx
+        ; .alias ie, rbp
+        ; .alias dp, r12
+
+        ; .alias instr, r13
+        ; .alias opcode, r14
+        ; .alias offset, r15
+
+        ; .alias f, rcx
+    );
+    let vm_fn = ops.offset();
+    dynasm!(ops
+        ; sub rsp, 48
+        ; mov [rsp + 48], rbp
+        ; mov [rsp + 32], rbx
+        ; mov [rsp + 24], r12
+        ; mov [rsp + 16], r13
+        ; mov [rsp + 8], r14
+        ; mov [rsp], r15
+
+        ; mov ip, rdi
+        ; mov ie, rdi
+        ; sal rsi, 2
+        ; add ie, rsi
+        ; mov dp, rdx
+
+        // if ip >= ie { goto end; }
+        ; cmp ip, ie
+        ; jge ->end
+
+        ; movsx instr, DWORD [ip] // instr = *ip
+        // offset = instr >> ISHIFT
+        ; mov offset, instr
+        ; sar offset, ISHIFT as _
+        // opcode = instr & 0xff
+        ; mov opcode, instr
+        ; and opcode, 0xff
+
+        ; ->more: // loop entry
+        ; add ip, 4 // ip = ip.offset(1)
+
+        ; lea rax, [=>jump_table]
+        ; shl opcode, 3
+        ; add rax, opcode
+        ; jmp rax
+
+        ; ->padd:
+        ; add dp, offset
+        ; jmp ->tail
+
+        ; ->dadd:
+        ; mov rax, instr
+        ; and rax, 0xff00
+        ; sar rax, NSHIFT as _
+        ; add BYTE [dp + offset], al
+        ; jmp ->tail
+
+        ; ->jz:
+        ; cmp BYTE [dp], 0
+        ; jne ->tail
+        ; sal offset, 2
+        ; add ip, offset
+        ; jmp ->tail
+
+        ; ->jnz:
+        ; cmp BYTE [dp], 0
+        ; je ->tail
+        ; sal offset, 2
+        ; add ip, offset
+        ; jmp ->tail
+
+        ; ->putc:
+        ; mov rdi, [dp + offset]
+        ; mov f, QWORD libc::putchar as _
+        ; call f
+        ; jmp ->tail
+
+        ; ->getc:
+        ; mov f, QWORD libc::getchar as _
+        ; call f
+        ; mov [dp + offset], rax
+        ; jmp ->tail
+
+        ; ->tail:
+        ; cmp ip, ie
+        ; jge ->end
+
+        ; movsx instr, DWORD [ip] // instr = *ip
+        // offset = instr >> ISHIFT
+        ; mov offset, instr
+        ; sar offset, ISHIFT as _
+        // opcode = instr & 0xff
+        ; mov opcode, instr
+        ; and opcode, 0xff
+        ; jmp ->more
+
+        ; ->end:
+        ; mov r15, [rsp]
+        ; mov r14, [rsp + 8]
+        ; mov r13, [rsp + 16]
+        ; mov r12, [rsp + 24]
+        ; mov rbx, [rsp + 32]
+        ; mov rbp, [rsp + 48]
+        ; add rsp, 48
+        ; ret
+
+        ; .align 8
+        ; =>jump_table
+        ; jmp ->padd
+        ; .align 8
+        ; jmp ->dadd
+        ; .align 8
+        ; jmp ->jz
+        ; .align 8
+        ; jmp ->jnz
+        ; .align 8
+        ; jmp ->putc
+        ; .align 8
+        ; jmp ->getc
+    );
+
+    let buf = ops.finalize().unwrap();
+    let f = unsafe { mem::transmute(buf.ptr(vm_fn)) };
+    (buf, f)
 }
 
 #[cfg(test)]

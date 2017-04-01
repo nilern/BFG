@@ -1,7 +1,10 @@
-#![feature(test)]
+#![feature(test, plugin)]
+#![plugin(dynasm)]
 
-extern crate rustyline;
 extern crate test;
+extern crate rustyline;
+extern crate libc;
+extern crate dynasmrt;
 
 use std::fs::File;
 use std::io::Read;
@@ -20,12 +23,14 @@ unsafe fn eval(src: &str, opt_level: usize) {
         Ok(ir) => match opt_level {
             0 => {
                 let code = bytecode::assemble(ir.iter());
-                let _ = bytecode::run(&code, &mut DATA);
+                let bv = bytecode::vm();
+                bv.1(code.as_ptr(), code.len(), DATA.as_mut_ptr());
             },
             1 => {
                 let opt_ir = bytecode::optimize(ir);
                 let code = bytecode::assemble(opt_ir.iter());
-                let _ = bytecode::run(&code, &mut DATA);
+                let bv = bytecode::vm();
+                bv.1(code.as_ptr(), code.len(), DATA.as_mut_ptr());
             },
             _ => println!("Error: unsupported opt_level {}", opt_level)
         },

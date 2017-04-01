@@ -5,3 +5,10 @@ authors = ["Pauli Jaakkola <pauli.jaakkola@iki.fi>"]
 
 [dependencies]
 rustyline = "1.0.0"
+libc = "0.2"
+
+[dependencies.dynasm]
+path = "../dynasm-rs/plugin"
+
+[dependencies.dynasmrt]
+path = "../dynasm-rs/runtime"

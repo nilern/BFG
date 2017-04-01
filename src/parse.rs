@@ -21,11 +21,12 @@ pub fn parse(code: &str) -> Result<Vec<Stmt>, ParseError> {
             '-' => res.push(DAdd(-1, 0)),
             '[' => {
                 res.push(Jz(0));
-                labels.push((Jz(0), res.len() as u16));
+                labels.push((Jz(0), res.len() as i16));
             },
             ']' => if let Some((Jz(_), target)) = labels.pop() {
-                res.push(Jnz(target));
-                res[target as usize - 1] = Jz(res.len() as u16);
+                let diff = res.len() as i16 - target + 1;
+                res.push(Jnz(-diff));
+                res[target as usize - 1] = Jz(diff);
             } else {
                 return Err(ParseError { index: index });
             },
