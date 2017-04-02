@@ -187,9 +187,33 @@ pub fn run(code: &[i32], data: &mut [u8]) -> io::Result<()> {
     Ok(())
 }
 
-pub fn vm() -> (ExecutableBuffer, extern fn(*const i32, usize, *mut u8)) {
+pub fn vm() -> (ExecutableBuffer, Vec<usize>, extern fn(*const i32, usize, *mut u8)) {
     let mut ops = x64::Assembler::new();
-    let jump_table = ops.new_dynamic_label();
+    let jump_table = vec![0; 6];
+
+    macro_rules! decode_dispatch {
+        () => {dynasm!(ops
+            ; cmp ip, ie
+            ; jge ->end // halt
+
+            // Decode most of instruction:
+            ; movsx instr, DWORD [ip] // instr = *ip
+            // offset = instr >> ISHIFT
+            ; mov offset, instr
+            ; sar offset, ISHIFT as _
+            // opcode = instr & 0xff
+            ; mov opcode, instr
+            ; and opcode, 0xff
+
+            ; add ip, 4 // ip = ip.offset(1)
+
+            // Indirect jump:
+            ; mov rax, QWORD jump_table.as_ptr() as _
+            ; shl opcode, 3
+            ; add rax, opcode
+            ; jmp QWORD [rax]
+        )}
+    }
 
     dynasm!(ops
         ; .alias ip, rbx
@@ -204,7 +228,8 @@ pub fn vm() -> (ExecutableBuffer, extern fn(*const i32, usize, *mut u8)) {
     );
     let vm_fn = ops.offset();
     dynasm!(ops
-        ; sub rsp, 48
+        // Set up stack frame and save callee-save registers:
+        ; sub rsp, 56
         ; mov [rsp + 48], rbp
         ; mov [rsp + 32], rbx
         ; mov [rsp + 24], r12
@@ -212,110 +237,89 @@ pub fn vm() -> (ExecutableBuffer, extern fn(*const i32, usize, *mut u8)) {
         ; mov [rsp + 8], r14
         ; mov [rsp], r15
 
+        // Fill jump table:
+        ; mov rax, QWORD jump_table.as_ptr() as _
+        ; lea rcx, [->padd]
+        ; mov [rax], rcx
+        ; add rax, 8
+        ; lea rcx, [->dadd]
+        ; mov [rax], rcx
+        ; add rax, 8
+        ; lea rcx, [->jz]
+        ; mov [rax], rcx
+        ; add rax, 8
+        ; lea rcx, [->jnz]
+        ; mov [rax], rcx
+        ; add rax, 8
+        ; lea rcx, [->putc]
+        ; mov [rax], rcx
+        ; add rax, 8
+        ; lea rcx, [->getc]
+        ; mov [rax], rcx
+
+        // Setup variables based on args:
         ; mov ip, rdi
         ; mov ie, rdi
         ; sal rsi, 2
         ; add ie, rsi
         ; mov dp, rdx
 
-        // if ip >= ie { goto end; }
-        ; cmp ip, ie
-        ; jge ->end
-
-        ; movsx instr, DWORD [ip] // instr = *ip
-        // offset = instr >> ISHIFT
-        ; mov offset, instr
-        ; sar offset, ISHIFT as _
-        // opcode = instr & 0xff
-        ; mov opcode, instr
-        ; and opcode, 0xff
-
-        ; ->more: // loop entry
-        ; add ip, 4 // ip = ip.offset(1)
-
-        ; lea rax, [=>jump_table]
-        ; shl opcode, 3
-        ; add rax, opcode
-        ; jmp rax
+        ;; decode_dispatch!()
 
         ; ->padd:
         ; add dp, offset
-        ; jmp ->tail
+        ;; decode_dispatch!()
 
         ; ->dadd:
         ; mov rax, instr
         ; and rax, 0xff00
         ; sar rax, NSHIFT as _
         ; add BYTE [dp + offset], al
-        ; jmp ->tail
+        ;; decode_dispatch!()
 
         ; ->jz:
         ; cmp BYTE [dp], 0
-        ; jne ->tail
+        ; jne >tail
         ; sal offset, 2
         ; add ip, offset
-        ; jmp ->tail
+        ; tail:
+        ;; decode_dispatch!()
 
         ; ->jnz:
         ; cmp BYTE [dp], 0
-        ; je ->tail
+        ; je >tail
         ; sal offset, 2
         ; add ip, offset
-        ; jmp ->tail
+        ; tail:
+        ;; decode_dispatch!()
 
         ; ->putc:
         ; mov rdi, [dp + offset]
         ; mov f, QWORD libc::putchar as _
         ; call f
-        ; jmp ->tail
+        ;; decode_dispatch!()
 
         ; ->getc:
         ; mov f, QWORD libc::getchar as _
         ; call f
         ; mov [dp + offset], rax
-        ; jmp ->tail
-
-        ; ->tail:
-        ; cmp ip, ie
-        ; jge ->end
-
-        ; movsx instr, DWORD [ip] // instr = *ip
-        // offset = instr >> ISHIFT
-        ; mov offset, instr
-        ; sar offset, ISHIFT as _
-        // opcode = instr & 0xff
-        ; mov opcode, instr
-        ; and opcode, 0xff
-        ; jmp ->more
+        ;; decode_dispatch!()
 
         ; ->end:
+        // Tear down stack frame and restore callee-save registers:
         ; mov r15, [rsp]
         ; mov r14, [rsp + 8]
         ; mov r13, [rsp + 16]
         ; mov r12, [rsp + 24]
         ; mov rbx, [rsp + 32]
         ; mov rbp, [rsp + 48]
-        ; add rsp, 48
+        ; add rsp, 56
         ; ret
-
-        ; .align 8
-        ; =>jump_table
-        ; jmp ->padd
-        ; .align 8
-        ; jmp ->dadd
-        ; .align 8
-        ; jmp ->jz
-        ; .align 8
-        ; jmp ->jnz
-        ; .align 8
-        ; jmp ->putc
-        ; .align 8
-        ; jmp ->getc
     );
 
     let buf = ops.finalize().unwrap();
     let f = unsafe { mem::transmute(buf.ptr(vm_fn)) };
-    (buf, f)
+    (buf, jump_table, f)
 }
 
 #[cfg(test)]
@@ -331,9 +335,12 @@ mod tests {
         let mut f = File::open("bf/hello.b").expect("unable to open file");
         let mut src = String::new();
         f.read_to_string(&mut src).expect("error reading from file");
+
         let ir = parse(&src).unwrap();
         let code = assemble(ir.iter());
-        b.iter(|| run(&code, &mut vec![0; 30_000]));
+        let bv = vm();
+        b.iter(|| bv.2(code.as_ptr(), code.len(), vec![0; 30_000].as_mut_ptr()));
+        println!("done");
     }
 
     #[bench]
@@ -341,9 +348,12 @@ mod tests {
         let mut f = File::open("bf/hello.b").expect("unable to open file");
         let mut src = String::new();
         f.read_to_string(&mut src).expect("error reading from file");
+
         let ir = parse(&src).unwrap();
         let opt_ir = optimize(ir);
         let code = assemble(opt_ir.iter());
-        b.iter(|| run(&code, &mut vec![0; 30_000]));
+        let bv = vm();
+        b.iter(|| bv.2(code.as_ptr(), code.len(), vec![0; 30_000].as_mut_ptr()));
+        println!("done");
     }
 }
