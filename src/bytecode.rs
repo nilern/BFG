@@ -187,6 +187,7 @@ pub fn run(code: &[i32], data: &mut [u8]) -> io::Result<()> {
     Ok(())
 }
 
+// FIXME: flush stdout
 pub fn vm() -> (ExecutableBuffer, Vec<usize>, extern fn(*const i32, usize, *mut u8)) {
     let mut ops = x64::Assembler::new();
     let jump_table = vec![0; 6];
@@ -202,40 +203,36 @@ pub fn vm() -> (ExecutableBuffer, Vec<usize>, extern fn(*const i32, usize, *mut 
             ; mov offset, instr
             ; sar offset, ISHIFT as _
             // opcode = instr & 0xff
-            ; mov opcode, instr
-            ; and opcode, 0xff
+            ; movzx opcode, al
 
             ; add ip, 4 // ip = ip.offset(1)
 
             // Indirect jump:
-            ; mov rax, QWORD jump_table.as_ptr() as _
-            ; shl opcode, 3
-            ; add rax, opcode
-            ; jmp QWORD [rax]
+            ; mov rdi, QWORD jump_table.as_ptr() as _
+            ; lea rdi, [rdi + opcode*8]
+            ; jmp QWORD [rdi]
         )}
     }
 
     dynasm!(ops
-        ; .alias ip, rbx
-        ; .alias ie, rbp
-        ; .alias dp, r12
+        ; .alias ip, r12
+        ; .alias ie, r13
+        ; .alias dp, r14
+        ; .alias offset, rbx
 
-        ; .alias instr, r13
-        ; .alias opcode, r14
-        ; .alias offset, r15
-
-        ; .alias f, rcx
+        ; .alias instr, rax
+        ; .alias opcode, rcx
+        ; .alias f, rax
     );
     let vm_fn = ops.offset();
     dynasm!(ops
         // Set up stack frame and save callee-save registers:
-        ; sub rsp, 56
-        ; mov [rsp + 48], rbp
-        ; mov [rsp + 32], rbx
-        ; mov [rsp + 24], r12
-        ; mov [rsp + 16], r13
-        ; mov [rsp + 8], r14
-        ; mov [rsp], r15
+        ; push rbp
+        ; mov rbp, rsp
+        ; push rbx
+        ; push r12
+        ; push r13
+        ; push r14
 
         // Fill jump table:
         ; mov rax, QWORD jump_table.as_ptr() as _
@@ -271,25 +268,22 @@ pub fn vm() -> (ExecutableBuffer, Vec<usize>, extern fn(*const i32, usize, *mut 
         ;; decode_dispatch!()
 
         ; ->dadd:
-        ; mov rax, instr
-        ; and rax, 0xff00
-        ; sar rax, NSHIFT as _
+        ; and instr, 0xff00
+        ; shr instr, NSHIFT as _
         ; add BYTE [dp + offset], al
         ;; decode_dispatch!()
 
         ; ->jz:
         ; cmp BYTE [dp], 0
         ; jne >tail
-        ; sal offset, 2
-        ; add ip, offset
+        ; lea ip, [ip + offset*4]
         ; tail:
         ;; decode_dispatch!()
 
         ; ->jnz:
         ; cmp BYTE [dp], 0
         ; je >tail
-        ; sal offset, 2
-        ; add ip, offset
+        ; lea ip, [ip + offset*4]
         ; tail:
         ;; decode_dispatch!()
 
@@ -307,13 +301,11 @@ pub fn vm() -> (ExecutableBuffer, Vec<usize>, extern fn(*const i32, usize, *mut 
 
         ; ->end:
         // Tear down stack frame and restore callee-save registers:
-        ; mov r15, [rsp]
-        ; mov r14, [rsp + 8]
-        ; mov r13, [rsp + 16]
-        ; mov r12, [rsp + 24]
-        ; mov rbx, [rsp + 32]
-        ; mov rbp, [rsp + 48]
-        ; add rsp, 56
+        ; pop r14
+        ; pop r13
+        ; pop r12
+        ; pop rbx
+        ; pop rbp
         ; ret
     );
 
