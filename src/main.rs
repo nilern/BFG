@@ -25,12 +25,14 @@ unsafe fn eval(src: &str, opt_level: usize) {
                 let code = bytecode::assemble(ir.iter());
                 let bv = bytecode::vm();
                 bv.2(code.as_ptr(), code.len(), DATA.as_mut_ptr());
+                // let _ = bytecode::run(&code, &mut DATA);
             },
             1 => {
                 let opt_ir = bytecode::optimize(ir);
                 let code = bytecode::assemble(opt_ir.iter());
                 let bv = bytecode::vm();
                 bv.2(code.as_ptr(), code.len(), DATA.as_mut_ptr());
+                // let _ = bytecode::run(&code, &mut DATA);
             },
             _ => println!("Error: unsupported opt_level {}", opt_level)
         },

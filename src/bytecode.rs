@@ -48,8 +48,16 @@ pub fn optimize(code: Vec<Stmt>) -> Vec<Stmt> {
                 loop {
                     match instrs.peek() {
                         Some(&DAdd(n, 0)) => {
-                            value_offset += n;
-                            instrs.next();
+                            match value_offset.checked_add(n) {
+                                Some(nv_offset) => {
+                                    value_offset = nv_offset;
+                                    instrs.next();
+                                },
+                                None => {
+                                    commit_write(&mut res, dp_offset, value_offset);
+                                    value_offset = 0;
+                                }
+                            }
                         },
                         Some(&PAdd(_)) | Some(&Jz(_)) | Some(&Jnz(_)) | Some(&Putc(_)) | None => {
                             commit_write(&mut res, dp_offset, value_offset);
@@ -65,7 +73,7 @@ pub fn optimize(code: Vec<Stmt>) -> Vec<Stmt> {
                 dp_offset = 0;
 
                 res.push(Jz(0));
-                labels.push(res.len() as i16);
+                labels.push(res.len());
                 instrs.next();
             },
             Some(&Jnz(_)) => {
@@ -73,9 +81,9 @@ pub fn optimize(code: Vec<Stmt>) -> Vec<Stmt> {
                 dp_offset = 0;
 
                 let target = labels.pop().unwrap();
-                let diff = res.len() as i16 - target + 1;
+                let diff = (res.len() - target + 1) as i16;
                 res.push(Jnz(-diff));
-                res[target as usize - 1] = Jz(diff);
+                res[target - 1] = Jz(diff);
                 instrs.next();
             },
             Some(&Putc(0)) => {
