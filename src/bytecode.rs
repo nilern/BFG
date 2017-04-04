@@ -29,7 +29,7 @@ impl Stmt {
     }
 }
 
-pub fn optimize(code: Vec<Stmt>) -> Vec<Stmt> {
+fn contract(code: Vec<Stmt>) -> Vec<Stmt> {
     use bytecode::Stmt::*;
 
     let mut instrs = code.into_iter().peekable();
@@ -110,6 +110,21 @@ fn commit_write(res: &mut Vec<Stmt>, dp_offset: i16, value_offset: i8) {
     if value_offset != 0 { res.push(Stmt::DAdd(value_offset, dp_offset)); }
 }
 
+pub fn optimize(code: Vec<Stmt>) -> Vec<Stmt> {
+    // for (i, stmt) in code.iter().take(350).enumerate() {
+    //     println!("{}: {:?}", i, stmt);
+    // }
+    // println!("");
+
+    let contracted = contract(code);
+    // for (i, stmt) in contracted.iter().take(500).enumerate() {
+    //     println!("{}: {:?}", i, stmt);
+    // }
+    // println!("");
+
+    contracted
+}
+
 #[derive(Debug)]
 pub enum Opcode {
     PAdd = 0,
@@ -158,6 +173,7 @@ pub fn run(code: &[i32], data: &mut [u8]) -> io::Result<()> {
         let mut offset = instr >> ISHIFT;
 
         loop {
+            // println!("{}: 0x{:x}, data[{}] = {}", ip, instr, dp, data[dp]);
             ip += 1;
 
             match opcode {

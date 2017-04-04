@@ -13,8 +13,12 @@ use rustyline::Editor;
 
 mod parse;
 mod bytecode;
+mod aot;
 
 use parse::parse;
+
+// TODO: allow selecting bytecode, VM optimization levels
+// MAYBE: debug switches
 
 static mut DATA: [u8; 30_000] = [0; 30_000];
 
@@ -22,17 +26,19 @@ unsafe fn eval(src: &str, opt_level: usize) {
     match parse(src) {
         Ok(ir) => match opt_level {
             0 => {
-                let code = bytecode::assemble(ir.iter());
-                let bv = bytecode::vm();
-                bv.2(code.as_ptr(), code.len(), DATA.as_mut_ptr());
+                // let code = bytecode::assemble(ir.iter());
+                // let bv = bytecode::vm();
+                // bv.2(code.as_ptr(), code.len(), DATA.as_mut_ptr());
                 // let _ = bytecode::run(&code, &mut DATA);
+                aot::codegen(ir).1(DATA.as_mut_ptr());
             },
             1 => {
                 let opt_ir = bytecode::optimize(ir);
-                let code = bytecode::assemble(opt_ir.iter());
-                let bv = bytecode::vm();
-                bv.2(code.as_ptr(), code.len(), DATA.as_mut_ptr());
+                // let code = bytecode::assemble(opt_ir.iter());
+                // let bv = bytecode::vm();
+                // bv.2(code.as_ptr(), code.len(), DATA.as_mut_ptr());
                 // let _ = bytecode::run(&code, &mut DATA);
+                aot::codegen(opt_ir).1(DATA.as_mut_ptr());
             },
             _ => println!("Error: unsupported opt_level {}", opt_level)
         },
