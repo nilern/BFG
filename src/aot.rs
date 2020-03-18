@@ -2,17 +2,21 @@ use std::mem;
 use libc;
 use dynasmrt::{DynasmApi, DynasmLabelApi, ExecutableBuffer};
 use dynasmrt::x64;
+use dynasm::dynasm;
 
 use bytecode::Stmt;
 
 pub fn codegen(ir: Vec<Stmt>) -> (ExecutableBuffer, extern fn(*mut u8)) {
     use bytecode::Stmt::*;
 
-    let mut ops = x64::Assembler::new();
+    let mut ops = x64::Assembler::new().unwrap();
     let mut loops = Vec::new();
 
     let entry = ops.offset();
     dynasm!(ops
+        ; .alias dp, r14
+        ; .alias f, rax
+
         ; push rbp
         ; mov rbp, rsp
         ; push rbx

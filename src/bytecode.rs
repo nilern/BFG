@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 use std::mem;
 use dynasmrt::{DynasmApi, DynasmLabelApi, ExecutableBuffer};
 use dynasmrt::x64;
+use dynasm::dynasm;
 use libc;
 
 #[derive(Debug, Clone, Copy)]
@@ -213,7 +214,7 @@ pub fn run(code: &[i32], data: &mut [u8]) -> io::Result<()> {
 
 // FIXME: flush stdout
 pub fn vm() -> (ExecutableBuffer, Vec<usize>, extern fn(*const i32, usize, *mut u8)) {
-    let mut ops = x64::Assembler::new();
+    let mut ops = x64::Assembler::new().unwrap();
     let jump_table = vec![0; 6];
 
     macro_rules! decode_dispatch {

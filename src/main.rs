@@ -1,10 +1,10 @@
-#![feature(test, plugin)]
-#![plugin(dynasm)]
+#![feature(test, proc_macro_hygiene)]
 
 extern crate test;
 extern crate rustyline;
 extern crate libc;
 extern crate dynasmrt;
+extern crate dynasm;
 extern crate rustc_serialize;
 extern crate docopt;
 
